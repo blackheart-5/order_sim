@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: order-sim
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/simulate?events=1000&warmup=100
