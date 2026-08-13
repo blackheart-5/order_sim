@@ -1,6 +1,7 @@
 # Limit Order Book + Matching Engine
 
-![Uploading image.png…]()
+<img width="1909" height="1023" alt="image" src="https://github.com/user-attachments/assets/07e67215-b4ee-4d79-800a-829e33ef4f51" />
+
 
 
 A price-time priority matching engine in C++17, with Python bindings and a
