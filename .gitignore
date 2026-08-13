@@ -1,0 +1,11 @@
+build/
+results/
+*.so
+*.pyd
+*.o
+*.a
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+.DS_Store
