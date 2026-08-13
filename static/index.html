@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Limit Order Book Simulator</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --border: #242424;
+  --text: #d4d4d4;
+  --dim: #555;
+  --bid: #26a69a;
+  --ask: #ef5350;
+  --accent: #5c6bc0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 12px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── header ── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+header h1 { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; }
+header small { color: var(--dim); font-size: 10px; }
+.controls { display: flex; gap: 10px; align-items: center; margin-left: auto; }
+.param { display: flex; align-items: center; gap: 5px; }
+.param label { color: var(--dim); font-size: 11px; }
+.param input {
+  width: 58px; background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); padding: 3px 5px; font: inherit; font-size: 11px;
+}
+.param input:focus { outline: 1px solid var(--accent); }
+button#runBtn {
+  background: var(--accent); color: #fff; border: none;
+  padding: 5px 16px; cursor: pointer; font: inherit; font-size: 11px;
+  font-weight: 700; letter-spacing: .5px; white-space: nowrap;
+}
+button#runBtn:hover { filter: brightness(1.15); }
+button#runBtn:disabled { filter: brightness(.45); cursor: default; }
+
+/* ── progress bar ── */
+#progressBar {
+  height: 2px; background: var(--accent); width: 0;
+  transition: width .08s linear; flex-shrink: 0;
+}
+
+/* ── main grid ── */
+.grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  flex: 1;
+  min-height: 0;
+}
+.panel {
+  background: var(--bg);
+  padding: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.panel-left {
+  grid-row: 1 / 3;
+}
+.panel-title {
+  font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--dim); margin-bottom: 10px; flex-shrink: 0;
+}
+
+/* ── order book ── */
+.book { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+
+.book-row {
+  display: grid;
+  grid-template-columns: 75px 1fr 70px;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+}
+.book-price { font-weight: 700; font-size: 12px; }
+.ask .book-price { color: var(--ask); }
+.bid .book-price { color: var(--bid); }
+.book-qty { text-align: right; color: var(--dim); }
+
+.book-bar-wrap { height: 10px; background: var(--surface); border-radius: 1px; overflow: hidden; }
+.book-bar { height: 100%; border-radius: 1px; transition: width .12s ease; }
+.ask .book-bar { background: var(--ask); opacity: .55; }
+.bid .book-bar { background: var(--bid); opacity: .55; }
+
+.mid-row {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 0;
+  display: grid;
+  grid-template-columns: 75px 1fr 70px;
+  align-items: center;
+  margin: 4px 0;
+}
+.mid-price { font-size: 18px; font-weight: 700; color: #fff; text-align: center; }
+.mid-spread { text-align: right; font-size: 10px; color: var(--dim); }
+
+.imbalance-wrap { margin-top: 14px; }
+.imbalance-track {
+  height: 5px; background: var(--surface); border-radius: 2px; overflow: hidden; margin: 4px 0;
+}
+.imbalance-fill {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, var(--ask) 0%, var(--bid) 100%);
+  transition: width .12s ease;
+}
+.imbalance-labels {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: var(--dim);
+}
+
+/* ── stats ── */
+.stats { margin-top: 14px; flex-shrink: 0; }
+.stats-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+}
+.stat { background: var(--surface); padding: 6px 8px; }
+.stat-label { font-size: 9px; color: var(--dim); margin-bottom: 1px; }
+.stat-value { font-size: 13px; font-weight: 600; color: #fff; }
+
+/* ── charts ── */
+.chart-wrap { flex: 1; min-height: 0; position: relative; }
+canvas { position: absolute; inset: 0; }
+
+.two-col {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+}
+.two-col > div { display: flex; flex-direction: column; min-height: 0; }
+
+/* ── placeholder ── */
+.placeholder {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: var(--dim); font-size: 11px;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Limit Order Book Simulator</h1>
+  <small>Cont-Stoikov-Talreja (2010) &mdash; zero-intelligence stochastic model</small>
+  <div class="controls">
+    <div class="param"><label>events</label>
+      <input type="number" id="pEvents" value="100000" step="10000" min="10000" max="500000">
+    </div>
+    <div class="param"><label title="placement power law">α</label>
+      <input type="number" id="pAlpha" value="0.7" step="0.1" min="0.1" max="2.0">
+    </div>
+    <div class="param"><label title="market order rate">μ</label>
+      <input type="number" id="pMu" value="1.8" step="0.1" min="0.1" max="5.0">
+    </div>
+    <div class="param"><label title="cancellation rate">θ</label>
+      <input type="number" id="pTheta" value="0.4" step="0.05" min="0.05" max="2.0">
+    </div>
+    <button id="runBtn" onclick="runSim()">RUN</button>
+  </div>
+</header>
+
+<div id="progressBar"></div>
+
+<div class="grid">
+
+  <!-- left: book + stats -->
+  <div class="panel panel-left">
+    <div class="panel-title">Order Book</div>
+    <div class="book" id="book">
+      <div class="placeholder">Press RUN to simulate</div>
+    </div>
+    <div class="stats" id="statsPanel" style="display:none">
+      <div class="panel-title" style="margin-top:12px">Statistics</div>
+      <div class="stats-grid" id="statsGrid"></div>
+    </div>
+  </div>
+
+  <!-- top-right: mid price chart -->
+  <div class="panel">
+    <div class="panel-title">Mid Price</div>
+    <div class="chart-wrap">
+      <canvas id="midChart"></canvas>
+    </div>
+  </div>
+
+  <!-- bottom-right: depth + spread -->
+  <div class="panel">
+    <div class="two-col" style="flex:1;min-height:0">
+      <div>
+        <div class="panel-title">Depth Profile (avg qty by ticks from touch)</div>
+        <div class="chart-wrap">
+          <canvas id="depthChart"></canvas>
+        </div>
+      </div>
+      <div>
+        <div class="panel-title">Spread Distribution</div>
+        <div class="chart-wrap">
+          <canvas id="spreadChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let midChart, depthChart, spreadChart, rafId;
+
+const CHART_DEFAULTS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false,
+  plugins: { legend: { display: false }, tooltip: { enabled: false } },
+  scales: {
+    x: { display: false },
+    y: {
+      grid: { color: '#1e1e1e' },
+      border: { color: '#242424' },
+      ticks: { color: '#555', font: { family: 'monospace', size: 10 }, maxTicksLimit: 5 },
+    }
+  }
+};
+
+function makeChart(id, type, datasets, extraOpts = {}) {
+  const existing = Chart.getChart(id);
+  if (existing) existing.destroy();
+  return new Chart($(id), {
+    type,
+    data: { labels: [], datasets },
+    options: deepMerge(CHART_DEFAULTS, extraOpts),
+  });
+}
+
+function deepMerge(base, override) {
+  const out = { ...base };
+  for (const k in override) {
+    if (override[k] && typeof override[k] === 'object' && !Array.isArray(override[k])) {
+      out[k] = deepMerge(base[k] || {}, override[k]);
+    } else {
+      out[k] = override[k];
+    }
+  }
+  return out;
+}
+
+function initCharts() {
+  midChart = makeChart('midChart', 'line', [{
+    data: [], borderColor: '#d4d4d4', borderWidth: 1, pointRadius: 0, tension: 0,
+  }]);
+
+  depthChart = makeChart('depthChart', 'bar', [
+    { label: 'bid', data: [], backgroundColor: '#26a69a88', borderRadius: 1 },
+    { label: 'ask', data: [], backgroundColor: '#ef535088', borderRadius: 1 },
+  ], {
+    plugins: {
+      legend: {
+        display: true,
+        labels: { color: '#555', font: { size: 10 }, boxWidth: 8, padding: 8 },
+      }
+    },
+    scales: {
+      x: {
+        display: true,
+        grid: { color: '#1e1e1e' }, border: { color: '#242424' },
+        ticks: { color: '#555', font: { size: 10 } },
+      },
+    }
+  });
+
+  spreadChart = makeChart('spreadChart', 'bar', [{
+    data: [], backgroundColor: '#5c6bc088', borderRadius: 1,
+  }], {
+    scales: {
+      x: {
+        display: true,
+        grid: { color: '#1e1e1e' }, border: { color: '#242424' },
+        ticks: { color: '#555', font: { size: 10 } },
+      },
+    }
+  });
+}
+
+function setProgress(pct) {
+  $('progressBar').style.width = pct + '%';
+}
+
+async function runSim() {
+  const btn = $('runBtn');
+  btn.disabled = true;
+  if (rafId) cancelAnimationFrame(rafId);
+
+  initCharts();
+  $('book').innerHTML = '<div class="placeholder">Simulating…</div>';
+  $('statsPanel').style.display = 'none';
+  setProgress(0);
+
+  const params = new URLSearchParams({
+    events: $('pEvents').value,
+    alpha:  $('pAlpha').value,
+    mu:     $('pMu').value,
+    theta:  $('pTheta').value,
+    seed:   Math.floor(Math.random() * 1e6),
+  });
+
+  let data;
+  try {
+    const r = await fetch('/api/simulate?' + params);
+    if (!r.ok) {
+      const e = await r.json();
+      $('book').innerHTML = `<div class="placeholder" style="color:var(--ask)">${e.detail || r.statusText}</div>`;
+      btn.disabled = false;
+      return;
+    }
+    data = await r.json();
+  } catch (e) {
+    $('book').innerHTML = `<div class="placeholder" style="color:var(--ask)">Network error: ${e.message}</div>`;
+    btn.disabled = false;
+    return;
+  }
+
+  populateStaticCharts(data);
+  animate(data, btn);
+}
+
+function populateStaticCharts(data) {
+  // Depth profile
+  const nLvl = Math.min(15, (data.depth_bid || []).length);
+  if (nLvl > 0) {
+    depthChart.data.labels = Array.from({ length: nLvl }, (_, i) => i);
+    depthChart.data.datasets[0].data = data.depth_bid.slice(0, nLvl);
+    depthChart.data.datasets[1].data = data.depth_ask.slice(0, nLvl);
+    depthChart.update();
+  }
+
+  // Spread distribution
+  const hist = data.spread_hist || {};
+  const sKeys = Object.keys(hist).map(Number).sort((a, b) => a - b);
+  spreadChart.data.labels = sKeys;
+  spreadChart.data.datasets[0].data = sKeys.map(k => hist[k]);
+  spreadChart.update();
+
+  // Full mid-price series
+  const snaps = data.snapshots;
+  midChart.data.labels = snaps.map((_, i) => i);
+  midChart.data.datasets[0].data = snaps.map(s => s.mid);
+  midChart.update();
+}
+
+function bookHTML(snap, maxQty) {
+  const bidPct = Math.min(100, (snap.bid_qty / maxQty) * 100).toFixed(1);
+  const askPct = Math.min(100, (snap.ask_qty / maxQty) * 100).toFixed(1);
+  const fillPct = (((snap.imbalance + 1) / 2) * 100).toFixed(1);
+
+  return `
+    <div class="book-row ask" style="margin-bottom:3px">
+      <span class="book-price">${snap.ask.toLocaleString()}</span>
+      <div class="book-bar-wrap"><div class="book-bar" style="width:${askPct}%"></div></div>
+      <span class="book-qty">${snap.ask_qty.toLocaleString()}</span>
+    </div>
+    <div class="mid-row">
+      <span style="color:var(--dim);font-size:10px">spread</span>
+      <span class="mid-price">${snap.mid.toFixed(1)}</span>
+      <span class="mid-spread">${snap.spread} tick${snap.spread !== 1 ? 's' : ''}</span>
+    </div>
+    <div class="book-row bid" style="margin-top:3px">
+      <span class="book-price">${snap.bid.toLocaleString()}</span>
+      <div class="book-bar-wrap"><div class="book-bar" style="width:${bidPct}%"></div></div>
+      <span class="book-qty">${snap.bid_qty.toLocaleString()}</span>
+    </div>
+    <div class="imbalance-wrap">
+      <div style="font-size:9px;color:var(--dim);margin-bottom:3px">Queue imbalance</div>
+      <div class="imbalance-track">
+        <div class="imbalance-fill" style="width:${fillPct}%"></div>
+      </div>
+      <div class="imbalance-labels"><span>ask</span><span>bid</span></div>
+    </div>`;
+}
+
+function animate(data, btn) {
+  const snaps = data.snapshots;
+  const n = snaps.length;
+  if (!n) {
+    $('book').innerHTML = '<div class="placeholder">No snapshots — book never had two sides.</div>';
+    btn.disabled = false;
+    return;
+  }
+
+  const maxQty = Math.max(...snaps.map(s => Math.max(s.bid_qty, s.ask_qty)));
+  const step = Math.max(1, Math.floor(n / 400));
+  let i = 0;
+
+  function frame() {
+    const snap = snaps[Math.min(i, n - 1)];
+    $('book').innerHTML = bookHTML(snap, maxQty);
+    setProgress((i / n) * 100);
+    i += step;
+
+    if (i < n) {
+      rafId = requestAnimationFrame(frame);
+    } else {
+      $('book').innerHTML = bookHTML(snaps[n - 1], maxQty);
+      setProgress(100);
+      showStats(data.summary);
+      btn.disabled = false;
+    }
+  }
+
+  rafId = requestAnimationFrame(frame);
+}
+
+function showStats(s) {
+  if (!s) return;
+  const f = (v, d = 2) => (typeof v === 'number' ? v.toFixed(d) : '—');
+  const rows = [
+    ['Events',     (s.events  || 0).toLocaleString()],
+    ['Trades',     (s.trades  || 0).toLocaleString()],
+    ['Volume',     (s.volume  || 0).toLocaleString()],
+    ['Mean spread', f(s.mean_spread_ticks) + ' tks'],
+    ['At 1 tick',  f(s.spread_at_1_tick_pct, 1) + '%'],
+    ['Mid σ',      f(s.mid_stdev, 4) + ' tks'],
+    ['Δmid AC',    f(s.mid_increment_autocorr, 4)],
+    ['Sign AC',    f(s.trade_sign_autocorr, 4)],
+  ];
+  $('statsGrid').innerHTML = rows
+    .map(([l, v]) => `<div class="stat"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></div>`)
+    .join('');
+  $('statsPanel').style.display = '';
+}
+
+initCharts();
+</script>
+</body>
+</html>

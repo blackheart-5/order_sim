@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+pybind11
+numpy
